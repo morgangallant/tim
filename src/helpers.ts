@@ -89,12 +89,14 @@ export async function GetLastPrefixedCounterValue<T>(
  * @param prefix The prefix to reverse scan.
  * @param t The object to write the values to.
  * @param filter The filtering function to use.
+ * @param addone Whether or not to add a single additional non-matching object to return structure.
  */
 export async function GetLastPrefixedCounterSet<T>(
     prefix: string,
     t: ClassType<T>,
     filter: (v: T) => boolean,
-): Promise<T[] | null> {
+    addone: boolean,
+): Promise<T[]> {
     var idx = (await PrefixedCounterValue(prefix, false)) - 1;
     var collect: T[] = [];
     for (; idx > 0; idx--) {
@@ -104,6 +106,9 @@ export async function GetLastPrefixedCounterSet<T>(
         }
         const oval = await JSONToObj(val, t);
         if (!filter(oval)) {
+            if (addone) {
+                collect.push(oval);
+            }
             break;
         }
         collect.push(oval);

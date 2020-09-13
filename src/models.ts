@@ -22,7 +22,6 @@ export class NLRequest {
 
 export class NLResponse {
     message: string;
-    context?: TSMap<string, any>;
 }
 
 export enum NLIntent {
@@ -37,7 +36,7 @@ export enum Activity {
     Debuild = "debuild",
     School = "school",
     Reading = "reading",
-    Buffer = "other"
+    Buffer = "buffer"
 }
 
 export class NLLog {
@@ -47,6 +46,6 @@ export class NLLog {
     meta: {
         interface: string;
         intent: NLIntent;
-        newActivity?: Activity;
+        entities: TSMap<string, any>;
     };
 }

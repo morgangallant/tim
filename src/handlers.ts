@@ -1,5 +1,5 @@
-import { User, Activity, NLIntent, NLRequest, NLResponse } from "./models";
-import { JSONToObj } from './helpers';
+import { User, Activity, NLIntent, NLRequest, NLResponse, NLLog } from "./models";
+import { JSONToObj, WritePrefixedCounterValue, GetLastPrefixedCounterSet, GetLastPrefixedCounterValue } from './helpers';
 import { v4 as uuidv4 } from 'uuid';
 import { TSMap } from "typescript-map";
 
@@ -153,14 +153,19 @@ export async function OAICompletion(req: {
     if (completionResponse.choices.length == 0) {
         throw new Error('openai completion request returned no choices');
     }
-    return completionResponse.choices[0].text;
+    return completionResponse.choices[0].text.trim();
 }
+
+/**
+ * An ActivitySummary gives a summary of activities for a set time measured in hours.
+ */
+type ActivitySummary = TSMap<Activity, number>;
 
 /**
  * Time allocations (budgets) for weekdays (Sunday - Thursday) measured in hours.
  * Any non-allocated time is implicity assigned to Activity.Buffer.
  */
-var WeekdayTimeAllocations = new TSMap([
+var WeekdayTimeAllocations = new TSMap<Activity, number>([
     [Activity.Sleep, 6.0],
     [Activity.Routines, 1.0],
     [Activity.Meals, 1.0],
@@ -172,7 +177,7 @@ var WeekdayTimeAllocations = new TSMap([
  * Time allocations (budgets) for weekends (Friday - Saturday) measured in hours.
  * Any non-allocated time is implicity assigned to Activity.Buffer.
  */
-var WeekendTimeAllocations = new TSMap([
+var WeekendTimeAllocations = new TSMap<Activity, number>([
     [Activity.Sleep, 6.0],
     [Activity.Routines, 1.0],
     [Activity.Meals, 2.0],
@@ -253,10 +258,9 @@ async function ExtractIntentAndEntities(query: string): Promise<{
     // At this point, the intent must be NLIntent.RecordActivitySwitch, meaning the user has
     // transitioned from an one activity to another. We must determine which activity the user
     // has now chosen to transition to. For this, we use a GPT-3 query.
-    const activity = await ExtractActivityTransition(query);
     return {
         intent: NLIntent.RecordActivitySwitch,
-        activity: activity
+        activity: await ExtractActivityTransition(query)
     }
 }
 
@@ -264,6 +268,35 @@ async function ExtractIntentAndEntities(query: string): Promise<{
  * An NLHandler is used to handle an natural language query.
  */
 type NLHandler = (r: NLRequest) => Promise<NLResponse>;
+
+// The number of milliseconds in an hour.
+const MSInHour = 60 * 60 * 1000;
+
+/**
+ * Get an activity summary of a user for a given day.
+ * @param user The user identifier.
+ */
+async function GetActivitySummaryForDay(user: string): Promise<ActivitySummary> {
+    const prefix = `users:${user}:interactions`;
+    const searchDate = new Date().setHours(0, 0, 0, 0); // 00:00 today
+    // There is a potential issue here that if the addone intent isn't an activity switch,
+    // then this will fail horrifically.
+    const log = await GetLastPrefixedCounterSet(prefix, NLLog, (v: NLLog): boolean => {
+        return v.timestamp > searchDate;
+    }, /*addone: */true);
+    // Tally up all the times - note that timestamps are stored in milliseconds.
+    const summary = new TSMap<Activity, number>([]);
+    for (let i = 0; i < log.length; ++i) {
+        if (log[i].meta.intent != NLIntent.RecordActivitySwitch) {
+            continue;
+        }
+        const duration = (((i == log.length - 1) ? (Date.now()) : (log[i + 1].timestamp)) - log[i].timestamp) / MSInHour;
+        const activity = log[i].meta.entities.get('activity') as Activity;
+        const existing = summary.has(activity) ? summary.get(activity) : 0;
+        summary.set(activity, existing + duration);
+    }
+    return summary;
+}
 
 /**
  * Gives the user a summary of the day, including how much time they have spent on each
@@ -276,14 +309,32 @@ async function NLHandleDailySummary(r: NLRequest): Promise<NLResponse> {
 }
 
 /**
+ * Returns the current activity of the user.
+ * @param user The user identifier.
+ */
+async function GetUserCurrentActivity(user: string): Promise<Activity> {
+    const prefix = `users:${user}:interactions`;
+    const last = await GetLastPrefixedCounterValue(prefix, NLLog, (v: NLLog): boolean => {
+        return v.meta.intent == NLIntent.RecordActivitySwitch;
+    });
+    if (last == null) {
+        return Activity.Buffer;
+    }
+    return last.meta.entities.get('activity') as Activity;
+}
+
+/**
  * Logs an activity switch between two activities. Since we record time spent 24/7, switching to an
  * activity implies the ending of the other activity. This drastically reduces the number of
  * messages required back and forth.
  * @param r The user request.
  */
 async function NLHandleActivitySwitch(r: NLRequest): Promise<NLResponse> {
-    // TODO
-    return new NLResponse();
+    const current = await GetUserCurrentActivity(r.user.uid);
+    const transitioned = r.entities.get('activity') as Activity;
+    const response = new NLResponse();
+    response.message = `Switching from ${current.toString()} to ${transitioned.toString()}.`;
+    return response;
 }
 
 /**
@@ -316,8 +367,17 @@ export async function TelegramHandler(req: Request): Promise<Response> {
     const response = await NLHandlers.get(ie.intent)(request);
 
     // Log the interaction and send the response to the user.
+    const log = new NLLog();
+    log.timestamp = Date.now();
+    log.request = wh.message.text;
+    log.response = response.message;
+    log.meta = {
+        interface: 'telegram',
+        entities: request.entities,
+        intent: ie.intent,
+    };
     await Promise.all([
-        // TODO: Log Interaction
+        WritePrefixedCounterValue(`users:${user.uid}:interactions`, JSON.stringify(log)),
         SendTelegramMessage(wh.message.chat.id, response.message)
     ]);
     return new Response();
