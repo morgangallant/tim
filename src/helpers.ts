@@ -82,3 +82,31 @@ export async function GetLastPrefixedCounterValue<T>(
     }
     return null;
 }
+
+/**
+ * Returns a set of the last prefixed counter values which match a filter function. This is
+ * essentially a take...while loop in reverse direction.
+ * @param prefix The prefix to reverse scan.
+ * @param t The object to write the values to.
+ * @param filter The filtering function to use.
+ */
+export async function GetLastPrefixedCounterSet<T>(
+    prefix: string,
+    t: ClassType<T>,
+    filter: (v: T) => boolean,
+): Promise<T[] | null> {
+    var idx = (await PrefixedCounterValue(prefix, false)) - 1;
+    var collect: T[] = [];
+    for (; idx > 0; idx--) {
+        const val = await TIMDB.get(`${prefix}:${idx}`, 'json');
+        if (val == null) {
+            break;
+        }
+        const oval = await JSONToObj(val, t);
+        if (!filter(oval)) {
+            break;
+        }
+        collect.push(oval);
+    }
+    return collect;
+}
