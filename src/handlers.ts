@@ -248,12 +248,15 @@ async function ExtractIntentAndEntities(query: string): Promise<{
     activity?: Activity
 }> {
     query = query.toLowerCase();
-    // Trivial case - if the query returns the word summary, then we return a summary of todays
-    // activities and time usage.
     if (query.includes("summary")) {
         return {
-            intent: NLIntent.DailySummary,
+            intent: NLIntent.DailySummary
         }
+    } else if (query == "/start") {
+        return {
+            intent: NLIntent.StartCommand
+        }
+
     }
     // At this point, the intent must be NLIntent.RecordActivitySwitch, meaning the user has
     // transitioned from an one activity to another. We must determine which activity the user
@@ -299,6 +302,16 @@ async function GetActivitySummaryForDay(user: string): Promise<ActivitySummary> 
 }
 
 /**
+ * Handles the /start command.
+ * @param r The user request.
+ */
+async function NLHandleStartCommand(r: NLRequest): Promise<NLResponse> {
+    const response = new NLResponse();
+    response.message = "Hello! By default, you are currently on buffered time.";
+    return response;
+}
+
+/**
  * Gives the user a summary of the day, including how much time they have spent on each
  * activity, whether or not they are on track, and how much time remaining for certain activities.
  * @param r The user request.
@@ -341,6 +354,7 @@ async function NLHandleActivitySwitch(r: NLRequest): Promise<NLResponse> {
  * Mappings of Intents to Handlers.
  */
 var NLHandlers = new TSMap<NLIntent, NLHandler>([
+    [NLIntent.StartCommand, NLHandleStartCommand],
     [NLIntent.DailySummary, NLHandleDailySummary],
     [NLIntent.RecordActivitySwitch, NLHandleActivitySwitch]
 ]);

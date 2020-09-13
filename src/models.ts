@@ -25,6 +25,7 @@ export class NLResponse {
 }
 
 export enum NLIntent {
+    StartCommand = "start-cmd",
     DailySummary = "day-summary",
     RecordActivitySwitch = "activity-switch"
 }
