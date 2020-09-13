@@ -1,3 +1,5 @@
+import { HelloWorldHandler, TelegramHandler } from './handlers';
+
 /**
  * Generator function for helper methods that is used to check if a request uses
  * a particular HTTP method, like a GET or a POST.
@@ -182,15 +184,6 @@ class Router {
 }
 
 /**
- * A simple handler which returns 'Hello World' to any incoming request. This is
- * used mostly for testing purposes.
- * @param req The incoming HTTP request.
- */
-async function HelloWorldHandler(req: Request): Promise<Response> {
-  return new Response('Hello World');
-}
-
-/**
  * HandleRequest is the primary handler which uses the Router object to route
  * incoming requests to the proper handler function.
  * @param request The incoming HTTP request.
@@ -198,6 +191,7 @@ async function HelloWorldHandler(req: Request): Promise<Response> {
 const HandleEvent = async (event: FetchEvent): Promise<Response> => {
   const r = new Router();
   r.get('/', HelloWorldHandler);
+  r.post('/_wh/telegram', TelegramHandler);
 
   try {
     const response = await r.route(event.request);
