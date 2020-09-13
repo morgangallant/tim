@@ -1,4 +1,5 @@
-import { JSONToObj, User, Activity, NLIntent, NLRequest, NLResponse } from "./models";
+import { User, Activity, NLIntent, NLRequest, NLResponse } from "./models";
+import { JSONToObj } from './helpers';
 import { v4 as uuidv4 } from 'uuid';
 import { TSMap } from "typescript-map";
 
