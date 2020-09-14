@@ -1,7 +1,6 @@
 import { User, Activity, NLIntent, NLRequest, NLResponse, NLLog } from "./models";
 import { JSONToObj, WritePrefixedCounterValue, GetLastPrefixedCounterSet, GetLastPrefixedCounterValue } from './helpers';
 import { v4 as uuidv4 } from 'uuid';
-import { TSMap } from "typescript-map";
 
 /**
  * A simple handler which returns 'Hello World' to any incoming request. This is
@@ -159,13 +158,13 @@ export async function OAICompletion(req: {
 /**
  * An ActivitySummary gives a summary of activities for a set time measured in hours.
  */
-type ActivitySummary = TSMap<Activity, number>;
+type ActivitySummary = Map<Activity, number>;
 
 /**
  * Time allocations (budgets) for weekdays (Sunday - Thursday) measured in hours.
  * Any non-allocated time is implicity assigned to Activity.Buffer.
  */
-var WeekdayTimeAllocations = new TSMap<Activity, number>([
+var WeekdayTimeAllocations = new Map<Activity, number>([
     [Activity.Sleep, 6.0],
     [Activity.Routines, 1.0],
     [Activity.Meals, 1.0],
@@ -177,7 +176,7 @@ var WeekdayTimeAllocations = new TSMap<Activity, number>([
  * Time allocations (budgets) for weekends (Friday - Saturday) measured in hours.
  * Any non-allocated time is implicity assigned to Activity.Buffer.
  */
-var WeekendTimeAllocations = new TSMap<Activity, number>([
+var WeekendTimeAllocations = new Map<Activity, number>([
     [Activity.Sleep, 6.0],
     [Activity.Routines, 1.0],
     [Activity.Meals, 2.0],
@@ -200,7 +199,7 @@ The valid activities are:
 - "debuild"
 - "school"
 - "reading"
-- "other"
+- "buffer"
 
 User Query: Bedtime! goodnight.
 Activity: sleep
@@ -221,10 +220,10 @@ User Query: time for some reading
 Activity: reading
 
 User Query: time for some downtime
-Activity: other
+Activity: buffer
 
 User Query: its chill time
-Activity: other
+Activity: buffer
 
 User Query: ${query}
 Activity:`
@@ -288,14 +287,17 @@ async function GetActivitySummaryForDay(user: string): Promise<ActivitySummary> 
         return v.timestamp > searchDate;
     }, /*addone: */true);
     // Tally up all the times - note that timestamps are stored in milliseconds.
-    const summary = new TSMap<Activity, number>([]);
+    const summary = new Map<Activity, number>([]);
     for (let i = 0; i < log.length; ++i) {
         if (log[i].meta.intent != NLIntent.RecordActivitySwitch) {
             continue;
         }
         const duration = (((i == log.length - 1) ? (Date.now()) : (log[i + 1].timestamp)) - log[i].timestamp) / MSInHour;
-        const activity = log[i].meta.entities.get('activity') as Activity;
-        const existing = summary.has(activity) ? summary.get(activity) : 0;
+        const activity = log[i].meta.activity!;
+        var existing = summary.get(activity);
+        if (!existing) {
+            existing = 0;
+        }
         summary.set(activity, existing + duration);
     }
     return summary;
@@ -333,7 +335,7 @@ async function GetUserCurrentActivity(user: string): Promise<Activity> {
     if (last == null) {
         return Activity.Buffer;
     }
-    return last.meta.entities.get('activity') as Activity;
+    return last.meta.activity!;
 }
 
 /**
@@ -344,16 +346,20 @@ async function GetUserCurrentActivity(user: string): Promise<Activity> {
  */
 async function NLHandleActivitySwitch(r: NLRequest): Promise<NLResponse> {
     const current = await GetUserCurrentActivity(r.user.uid);
-    const transitioned = r.entities.get('activity') as Activity;
+    const transitioned = r.activity!;
     const response = new NLResponse();
-    response.message = `Switching from ${current.toString()} to ${transitioned.toString()}.`;
+    if (current == transitioned) {
+        response.message = `No change, still on ${current.toString()}.`;
+    } else {
+        response.message = `Switching from ${current.toString()} to ${transitioned.toString()}.`;
+    }
     return response;
 }
 
 /**
  * Mappings of Intents to Handlers.
  */
-var NLHandlers = new TSMap<NLIntent, NLHandler>([
+var NLHandlers = new Map<NLIntent, NLHandler>([
     [NLIntent.StartCommand, NLHandleStartCommand],
     [NLIntent.DailySummary, NLHandleDailySummary],
     [NLIntent.RecordActivitySwitch, NLHandleActivitySwitch]
@@ -374,12 +380,14 @@ export async function TelegramHandler(req: Request): Promise<Response> {
     const request = new NLRequest();
     request.body = wh.message.text;
     request.user = user;
-    request.entities = new TSMap();
     if (ie.activity) {
-        request.entities.set('activity', ie.activity);
+        request.activity = ie.activity;
     }
-    const response = await NLHandlers.get(ie.intent)(request);
-
+    const handler = NLHandlers.get(ie.intent);
+    if (!handler) {
+        throw new Error("invalid handler for intent");
+    }
+    const response = await handler(request);
     // Log the interaction and send the response to the user.
     const log = new NLLog();
     log.timestamp = Date.now();
@@ -387,9 +395,11 @@ export async function TelegramHandler(req: Request): Promise<Response> {
     log.response = response.message;
     log.meta = {
         interface: 'telegram',
-        entities: request.entities,
         intent: ie.intent,
     };
+    if (ie.activity && ie.intent == NLIntent.RecordActivitySwitch) {
+        log.meta.activity = ie.activity;
+    }
     await Promise.all([
         WritePrefixedCounterValue(`users:${user.uid}:interactions`, JSON.stringify(log)),
         SendTelegramMessage(wh.message.chat.id, response.message)

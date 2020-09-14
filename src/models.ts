@@ -1,5 +1,3 @@
-import { TSMap } from "typescript-map";
-
 export class User {
     uid: string;
     firstname?: string;
@@ -14,10 +12,20 @@ export class User {
     };
 }
 
+export enum Activity {
+    Sleep = "sleep",
+    Routines = "routines",
+    Meals = "meals",
+    Debuild = "debuild",
+    School = "school",
+    Reading = "reading",
+    Buffer = "buffer"
+}
+
 export class NLRequest {
     user: User;
     body: string;
-    entities: TSMap<string, any>;
+    activity?: Activity;
 }
 
 export class NLResponse {
@@ -30,16 +38,6 @@ export enum NLIntent {
     RecordActivitySwitch = "activity-switch"
 }
 
-export enum Activity {
-    Sleep = "sleep",
-    Routines = "routines",
-    Meals = "meals",
-    Debuild = "debuild",
-    School = "school",
-    Reading = "reading",
-    Buffer = "buffer"
-}
-
 export class NLLog {
     timestamp: number;
     request: string;
@@ -47,6 +45,6 @@ export class NLLog {
     meta: {
         interface: string;
         intent: NLIntent;
-        entities: TSMap<string, any>;
+        activity?: Activity;
     };
 }

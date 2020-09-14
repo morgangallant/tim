@@ -197,6 +197,7 @@ const HandleEvent = async (event: FetchEvent): Promise<Response> => {
     const response = await r.route(event.request);
     return response;
   } catch (e) {
+    console.log(e);
     // we return a 200 even if an error occurs. this prevents telegram
     // from retrying requests and potentially duplicating user actions.
     return new Response(e.message || 'An error occured!', {
