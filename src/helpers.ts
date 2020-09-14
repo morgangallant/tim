@@ -107,11 +107,11 @@ export async function GetLastPrefixedCounterSet<T>(
         const oval = await JSONToObj(val, t);
         if (!filter(oval)) {
             if (addone) {
-                collect.push(oval);
+                collect.unshift(oval);
             }
             break;
         }
-        collect.push(oval);
+        collect.unshift(oval);
     }
     return collect;
 }

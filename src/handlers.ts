@@ -319,8 +319,16 @@ async function NLHandleStartCommand(r: NLRequest): Promise<NLResponse> {
  * @param r The user request.
  */
 async function NLHandleDailySummary(r: NLRequest): Promise<NLResponse> {
-    // TODO
-    return new NLResponse();
+    const summary = await GetActivitySummaryForDay(r.user.uid);
+    var msg = "";
+    for (let [activity, duration] of summary) {
+        const rd = (Math.round(duration * 100) / 100).toFixed(2);
+        msg += `${activity}: ${rd}h\n`
+    }
+    msg += "Good Job!" // todo: change based on delta
+    const resp = new NLResponse();
+    resp.message = msg;
+    return resp;
 }
 
 /**
