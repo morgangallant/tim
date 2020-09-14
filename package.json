@@ -27,6 +27,7 @@
   "dependencies": {
     "@types/uuid": "^8.0.0",
     "class-transformer": "^0.3.1",
+    "moment-timezone": "^0.5.31",
     "reflect-metadata": "^0.1.13",
     "typescript-map": "0.0.7",
     "uuid": "^8.3.0"

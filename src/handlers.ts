@@ -1,6 +1,7 @@
 import { User, Activity, NLIntent, NLRequest, NLResponse, NLLog } from "./models";
 import { JSONToObj, WritePrefixedCounterValue, GetLastPrefixedCounterSet, GetLastPrefixedCounterValue } from './helpers';
 import { v4 as uuidv4 } from 'uuid';
+import moment from "moment-timezone";
 
 /**
  * A simple handler which returns 'Hello World' to any incoming request. This is
@@ -295,18 +296,24 @@ type NLHandler = (r: NLRequest) => Promise<NLResponse>;
 const MSInHour = 60 * 60 * 1000;
 
 /**
+ * Returns a reference timestamp (10:30PM last night).
+ */
+function GetReferenceTimestamp(): number {
+    const midnight = moment().tz('America/New_York').startOf('day').toDate();
+    return midnight.getTime() - (1.5 * MSInHour);
+}
+
+/**
  * Get an activity summary of a user for a given day.
  * @param user The user identifier.
  */
 async function GetActivitySummaryForDay(user: string): Promise<ActivitySummary> {
     const prefix = `users:${user}:interactions`;
-    const date = new Date();
-    date.setDate(date.getDate() - 1);
-    const search = date.setHours(22, 30, 0, 0); // 10:30 last night.
+    const ref = GetReferenceTimestamp();
     // There is a potential issue here that if the addone intent isn't an activity switch,
     // then this will fail horrifically.
     const log = (await GetLastPrefixedCounterSet(prefix, NLLog, (v: NLLog): boolean => {
-        return v.timestamp > search;
+        return v.timestamp > ref;
     }, /*addone: */true)).filter((log) => log.meta.intent == NLIntent.RecordActivitySwitch);
     // Tally up all the times - note that timestamps are stored in milliseconds.
     const summary = new Map<Activity, number>([]);
