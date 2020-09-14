@@ -186,6 +186,26 @@ var WeekendTimeAllocations = new Map<Activity, number>([
 ]);
 
 /**
+ * Returns the allocation schedule of the day depending on the day of the week.
+ */
+function GetGoalAllocations(): Map<Activity, number> {
+    var day = new Date().getDay();
+    return (day < 5) ? WeekdayTimeAllocations : WeekendTimeAllocations;
+}
+
+/**
+ * Computes the amount of buffer time allowed for a given allocation schedule.
+ * @param alloc The allocation schedule.
+ */
+function GetBufferTime(alloc: Map<Activity, number>): number {
+    var remaining = 24;
+    for (let [_, value] of alloc) {
+        remaining -= value;
+    }
+    return remaining;
+}
+
+/**
  * Extracts the transitioned activity from the users query using GPT.
  * @param query The user query.
  */
@@ -280,18 +300,17 @@ const MSInHour = 60 * 60 * 1000;
  */
 async function GetActivitySummaryForDay(user: string): Promise<ActivitySummary> {
     const prefix = `users:${user}:interactions`;
-    const searchDate = new Date().setHours(0, 0, 0, 0); // 00:00 today
+    const date = new Date();
+    date.setDate(date.getDate() - 1);
+    const search = date.setHours(22, 30, 0, 0); // 10:30 last night.
     // There is a potential issue here that if the addone intent isn't an activity switch,
     // then this will fail horrifically.
-    const log = await GetLastPrefixedCounterSet(prefix, NLLog, (v: NLLog): boolean => {
-        return v.timestamp > searchDate;
-    }, /*addone: */true);
+    const log = (await GetLastPrefixedCounterSet(prefix, NLLog, (v: NLLog): boolean => {
+        return v.timestamp > search;
+    }, /*addone: */true)).filter((log) => log.meta.intent == NLIntent.RecordActivitySwitch);
     // Tally up all the times - note that timestamps are stored in milliseconds.
     const summary = new Map<Activity, number>([]);
     for (let i = 0; i < log.length; ++i) {
-        if (log[i].meta.intent != NLIntent.RecordActivitySwitch) {
-            continue;
-        }
         const duration = (((i == log.length - 1) ? (Date.now()) : (log[i + 1].timestamp)) - log[i].timestamp) / MSInHour;
         const activity = log[i].meta.activity!;
         var existing = summary.get(activity);
@@ -314,18 +333,37 @@ async function NLHandleStartCommand(r: NLRequest): Promise<NLResponse> {
 }
 
 /**
+ * Correctly formats a number as a string.
+ * @param n The number to format.
+ */
+function FormatNumberAsString(n: number): string {
+    return (Math.round(n * 100) / 100).toFixed(2);
+}
+
+/**
  * Gives the user a summary of the day, including how much time they have spent on each
  * activity, whether or not they are on track, and how much time remaining for certain activities.
  * @param r The user request.
  */
 async function NLHandleDailySummary(r: NLRequest): Promise<NLResponse> {
     const summary = await GetActivitySummaryForDay(r.user.uid);
+    const schedule = GetGoalAllocations();
+    const buffer = GetBufferTime(schedule);
     var msg = "";
-    for (let [activity, duration] of summary) {
-        const rd = (Math.round(duration * 100) / 100).toFixed(2);
-        msg += `${activity}: ${rd}h\n`
+    for (let [activity, rd] of summary) {
+        var gd = 0;
+        if (schedule.has(activity)) {
+            gd = schedule.get(activity)!;
+            schedule.delete(activity);
+        } else if (activity == Activity.Buffer) {
+            gd = buffer;
+        }
+        msg += `${activity}: ${FormatNumberAsString(rd)}h  (goal: ${FormatNumberAsString(gd)}h)\n`
     }
-    msg += "Good Job!" // todo: change based on delta
+    for (let [activity, duration] of schedule) {
+        msg += `${activity}: 0h  (goal: ${FormatNumberAsString(duration)}h)\n`
+    }
+    msg += "\nGood Job!" // todo: change based on delta
     const resp = new NLResponse();
     resp.message = msg;
     return resp;
